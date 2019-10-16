@@ -1,6 +1,11 @@
 from __future__ import print_function
 from __future__ import division
 
+'''
+Modified on Dec, 2018 from original by deckyal
+
+@author: stefano
+'''
 #https://pytorch.org/tutorials/beginner/finetuning_torchvision_models_tutorial.html
 #Fine tuning and feature extracton
 
@@ -46,14 +51,14 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-m', '--model', nargs='?', const='1', type=int, default='6')
 parser.add_argument('-b', '--batchsize', nargs='?', const='8', type=int, default='50')
 parser.add_argument('-cg', '--clipgradnorm', nargs='?', const=0, type=int, default='0') #[0-false, 1-true]
-parser.add_argument('-sp', '--split', nargs='?', const=1, type=int, default='2')
+parser.add_argument('-sp', '--split', nargs='?', const=1, type=int, default='0')
 args = parser.parse_args()
 
 type = args.model
 split = args.split
 
 
-def train_model(model, dataloaders, dataloadersVal, datasetSize, criterion, optimizer, model_name, batch_size, CVpositionPart, nnFileName, err_file, num_epochs = 25, is_inception = False):
+def train_model(model, dataloaders, datasetSize, criterion, optimizer, model_name, batch_size, CVpositionPart, num_epochs = 25, is_inception = False):
     since = time.time()
     val_acc_history = []
     idDiff = ""
@@ -61,20 +66,12 @@ def train_model(model, dataloaders, dataloadersVal, datasetSize, criterion, opti
     only01 = True
     only001 = True
 
-    f = open(err_file,'w+')
-    f.write("err : ")
-    f.close()
-
-    #best_model_wts = copy.deepcopy(model.state_dict())
+    best_model_wts = copy.deepcopy(model.state_dict())
     lowest_loss = 99999
 
     for epoch in range(num_epochs) :
         print('Epoch {}/{}'.format(epoch, num_epochs - 1))
         print('-'*10)
-
-        f = open(err_file,'a')
-        f.write('Epoch {}/{}'.format(epoch, num_epochs - 1))
-        f.close()
 
         running_loss = 0
         running_corrects = 0
@@ -82,7 +79,7 @@ def train_model(model, dataloaders, dataloadersVal, datasetSize, criterion, opti
         #iterate over data
 
         #for rinputs, rlabels in dataloaders :
-        for x,(rinputs, rlabels, rldmrk) in enumerate(dataloaders,0) :
+        for x,(rinputs, rlabels) in enumerate(dataloaders,0) :
 
             model.train()
 
@@ -104,7 +101,11 @@ def train_model(model, dataloaders, dataloadersVal, datasetSize, criterion, opti
                 else :
                     outputs = model(inputs)
                     loss = criterion(outputs, labels)
-
+                '''
+                print(outputs[0], '___', labels[0])
+                print('-'*5)
+                print(outputs, '___', labels)
+                '''
                 #_,preds = torch.max(outputs,1)
                 loss.backward()
                 #in case of possible gradient explotion (nan loss values), call:
@@ -112,31 +113,23 @@ def train_model(model, dataloaders, dataloadersVal, datasetSize, criterion, opti
                     torch.nn.utils.clip_grad_norm_(model.parameters(),1)
                 optimizer.step()
 
-            #stats
+            #statistics
             running_loss += loss.item() * inputs.size(0)
-            print("{}/{} loss : {}".format(x,int(len(dataloaders.dataset)/batch_size),loss.item()))
+            print("{}/{} loss : {}".format(x,int(datasetSize/batch_size),loss.item()))
             #running_corrects += torch.sum(preds == labels.data)
 
-            f = open(err_file,'a')
-            f.write("{}/{} loss : {}\n".format(x,int(len(dataloaders.dataset)/batch_size),loss.item()))
-            f.close()
-
-        epoch_loss = running_loss / len(dataloaders.dataset)
+        epoch_loss = running_loss / datasetSize
         #epoch_acc = running_corrects.double() / len(dataloaders[phase].dataset)
 
         print('Loss : {:.4f}'.format(epoch_loss))
-
-        f = open(err_file,'a')
-        f.write('Loss : {:.4f}'.format(epoch_loss))
-        f.close()
+        print('Loss : {:.4f}'.format(lowest_loss))
 
         "this if prevents saving when loss is nan"
         #Deep copy the model
-        if epoch%10 == 0 : #epoch_loss < lowest_loss
+        if epoch_loss < lowest_loss :
 
-            torch.save(model.state_dict(),curDir+'t-models/'+nnfileName)
+            torch.save(model.state_dict(),curDir+model_name+'CV'+str(CVpositionPart)+'netFVA.pt')
 
-            '''
             loss_diff = lowest_loss-epoch_loss
             if(loss_diff < 0.01 and loss_diff >= 0.001 and only01):
                 idDiff = "01"
@@ -160,9 +153,7 @@ def train_model(model, dataloaders, dataloadersVal, datasetSize, criterion, opti
                 file.write('\n-----\n')
 
             idDiff = ""
-            messageDiff = ""'''
-
-            evaluate_model(model, dataloadersVal, datasetSize, model_name, batch_size, CVpositionPart, nnFileName, err_file, num_epochs = 25, is_inception = False))
+            messageDiff = ""
 
     time_elapsed = time.time() - since
     print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
@@ -311,13 +302,6 @@ def evaluate_model(model, dataloaders, datasetSize, model_name, batch_size, CVpo
 
     print("FINAL RMSEA : {}, RMSEV : {}, CORA : {}, CORV : {}, ICCA : {}, ICCV : {}".format(RMSEArousal, RMSEValence, CORArousal, CORValence, ICCArousal, ICCValence))
 
-    print('epoch : ',epoch, ', epoch_loss : ',epoch_loss)
-    print('MSEV : ',mseV, ', CORV : ',corV,', ICCV : ',iccV,', ICCV2 : ',iccV2)
-    print('MSEA : ',mseA, ', CORA : ',corA,', ICCA : ',iccA,', ICCA2 : ',iccA2)
-
-    with open('AFEW-VA-RESNET-'+str(testSplit)+'-res.csv',mode='a') as fcsv:
-        fcsv.write(str(epoch)+','+str(epoch_loss)+','+str(mseV)+','+str(corV)
-        +','+str(iccV)+','+str(iccV2)+','+str(mseA)+','+str(corA)+','+str(iccA)+','+str(iccA2)+'\n')
 
     time_elapsed = time.time() - since
     print('Testing complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
@@ -332,11 +316,23 @@ def set_parameter_requires_grad(model, feature_extracting):
 def initialize_model(model_name, num_classes, feature_extract, use_pretrained = True):
     model_ft = None
     input_size = 0
-    batch_size = 0
-    nnFileName = ""
 
+    if model_name == 'resnet' :
+        model_ft = models.resnet152(pretrained = use_pretrained) #50 or 152
 
-    elif model_name == 1 :
+        '''
+        in case, feature_extract is true, set_parameter_requires_grad will set all grad parameters to false
+        and because after this operation a new layer (the output one) is added, these new parameters will have grad as true
+        '''
+
+        set_parameter_requires_grad(model_ft, feature_extract)
+
+        num_ftrs = model_ft.fc.in_features
+
+        model_ft.fc = nn.Linear(num_ftrs, num_classes)
+        input_size = 224
+
+    elif model_name == 'alexnet' :
         model_ft = models.alexnet(pretrained = use_pretrained)
 
         set_parameter_requires_grad(model_ft, feature_extract)
@@ -346,8 +342,26 @@ def initialize_model(model_name, num_classes, feature_extract, use_pretrained = 
         model_ft.classifier[6] = nn.Linear(num_ftrs, num_classes)
         input_size = 224
 
+    elif model_name == 'vgg':
+        model_ft = models.vgg11_bn(pretrained=use_pretrained)
 
-    elif model_name == 2 :
+        set_parameter_requires_grad(model_ft, feature_extract)
+
+        num_ftrs = model_ft.classifier[6].in_features
+
+        model_ft.classifier[6] = nn.Linear(num_ftrs,num_classes)
+        input_size = 224
+
+    elif model_name == 'squeezenet' :
+        model_ft = models.squeezenet1_0(pretrained=use_pretrained)
+
+        set_parameter_requires_grad(model_ft, feature_extract)
+
+        model_ft.classifier[1] = nn.Conv2d(512,num_classes, kernel_size=(1,1), stride = (1,1))
+        model_ft.num_classes = num_classes
+        input_size = 224
+
+    elif model_name == 'densenet' :
 
         model_ft = models.densenet121(pretrained=use_pretrained)
         set_parameter_requires_grad(model_ft, feature_extract)
@@ -357,17 +371,7 @@ def initialize_model(model_name, num_classes, feature_extract, use_pretrained = 
 
         input_size = 224
 
-    elif model_name == 3 :
-        model_ft = models.squeezenet1_0(pretrained=use_pretrained)
-
-        set_parameter_requires_grad(model_ft, feature_extract)
-
-        model_ft.classifier[1] = nn.Conv2d(512,num_classes, kernel_size=(1,1), stride = (1,1))
-        model_ft.num_classes = num_classes
-        input_size = 224
-
-
-    elif model_name == 4 :
+    elif model_name == 'inception' :
         #inception v3
         model_ft = models.inception_v3(pretrained = use_pretrained)
 
@@ -383,59 +387,25 @@ def initialize_model(model_name, num_classes, feature_extract, use_pretrained = 
 
         input_size = 299
 
-    elif model_name == 5:
-        model_ft = models.vgg11_bn(pretrained=use_pretrained)
-
-        set_parameter_requires_grad(model_ft, feature_extract)
-
-        num_ftrs = model_ft.classifier[6].in_features
-
-        model_ft.classifier[6] = nn.Linear(num_ftrs,num_classes)
-        input_size = 224
-
-        batch_size =20
-        nnFileName = 'vgg11.pt'
-
-    elif model_name == 6 :
-        model_ft = models.resnet152(pretrained = use_pretrained) #50 or 152
-
-        set_parameter_requires_grad(model_ft, feature_extract)
-
-        num_ftrs = model_ft.fc.in_features
-
-        model_ft.fc = nn.Linear(num_ftrs, num_classes)
-        input_size = 224
-
-        batch_size = 50
-        nnFileName = 'resnet152.pt'
-
     else :
         print('invalid model name')
         exit()
 
-    return model_ft, input_size, batch_size, nnFileName
+    return model_ft, input_size
 
-def trainRefactor():
+def train():
 
-    print('Starting neural network process in training mode at: ', os.getcwd())
+    print('Starting net training mode', os.getcwd())
 
     #Model to chosse from [resnet, alexnet, vgg, squeezenet, densenet,inception]
-    model_option = type
-
-    testSplit = split
-    nSplit = 5
-    listSplit = []
-    for i in range(nSplit):
-        if i!=testSplit :
-            listSplit.append(i)
-    print(listSplit)
-
-    multi_gpu = False
-    resume = False
-    model_ft = None
-    #batch_size = args.batchsize
-    batch_size = 6
-    nnFileName = ""
+    model_name = args.model
+    if model_name=='a': model_name='alexnet'
+    elif model_name=='d': model_name='densenet'
+    elif model_name=='i': model_name='inception'
+    elif model_name=='r': model_name='resnet'
+    elif model_name=='s': model_name='squeezenet'
+    elif model_name=='v': model_name='vgg'
+    else: model_name=='invalid'
 
     #Number of classes
     num_classes = 2
@@ -444,13 +414,12 @@ def trainRefactor():
     num_epochs = 1000
 
     feature_extract = False
-    '''
-    in case, feature_extract is true, set_parameter_requires_grad will set all grad parameters to false
-    and because after this operation a new layer (the output one) is added, these new parameters will have grad as true
-    '''
     #Intialize the model for this run
 
-    model_ft, image_size, batch_size, nnFileName = initialize_model(model_option, num_classes, feature_extract, use_pretrained=True)
+    type224Models = ['alexnet','densenet','resnet','squeezenet','vgg']
+
+    if model_name in type224Models: image_size = 224
+    elif model_name == 'inception': image_size = 299
 
     # Data augmentation and normalization for training
     # Just normalization for validation
@@ -468,68 +437,83 @@ def trainRefactor():
             transforms.Resize((image_size,image_size)),
             #transforms.CenterCrop(image_size),
             transforms.ToTensor(),
-            transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ])
     }
 
+    batch_size = args.batchsize
 
     print('pretrained model: ' + model_name + '\tbatch size: ' + str(batch_size) + '\n')
-    print(model_ft)
-
-    nnCompleteFileName = 'AFEW-VA-'+str(testSplit)+"-"+nnFileName
-    err_file = curDir+save_name+"AFEW.txt"
 
     print('Facial dataset')
-    ID = AFEWVA(["AFEW-VA-PP"], None, True, image_size, transform=data_transforms['train'], True, False, 1,split=True, nSplit = nSplit,listSplit=listSplit,wHeatmap=False,isVideo=False,seqLength=5)
+    ID = ImageDatasets(data_list = ['afew-Train'],transform=data_transforms['train'])
 
-    dataloader = torch.utils.data.DataLoader(dataset = ID, batch_size = batch_size, shuffle = True)
-
-    VD = AFEWVA(["AFEW-VA-PP"], None, True, image_size, transform=data_transforms['val'], True, False, 1,split=True, nSplit = nSplit,listSplit=[testSplit],wHeatmap=False,isVideo=False,seqLength=5)
-    dataloaderV = torch.utils.data.DataLoader(dataset = VD, batch_size = batch_size, shuffle = True)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-    if resume :
+    'Cross validation section'
+    datasetLen = len(ID)
+    indices = list(range(datasetLen))
+    k = 5 #for this cross validation, k = 5
+    split = math.floor(datasetLen/k)+1 #+1, otherwise there would be an extra list of just one sample
+    #data is divided in k (roughly) equal parts
+    kPartsIndices = [indices[z:z+split] for z in range(0,len(indices),split)]
 
-        pretrained_dict = torch.load(curDir+'t-models/'+save_name)
+    trainIndLists=[]
+    testIndLists=[]
 
-        model_dict = model_ft.state_dict()
+    for i in range(0, len(kPartsIndices)):
+        curTrainIndList=[]
 
-        # 1. filter out unnecessary keys
-        pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
-        # 2. overwrite entries in the existing state dict
-        model_dict.update(pretrained_dict)
-        # 3. load the new state dict
-        model_ft.load_state_dict(pretrained_dict)
+        #list of lists of indexes from the rest of parts
+        rest = kPartsIndices[:i] + kPartsIndices[i+1:]
 
+        [curTrainIndList.extend(rest[x]) for x in range(0,len(rest))] #extend and the loop to get all rest lists elements in one list
+        #list of lists of the rest parts
+        trainIndLists.append(curTrainIndList)
 
-
-    #model_ft.load_state_dict(torch.load('./netFL.pt', map_location=lambda storage, loc: storage))
-
-    "in case feature_extract is true, only output layer parameters will have grad as true, so these are the only needed in params_to_update"
-    model_ft = model_ft.to(device)#to(device)
-    params_to_update = model_ft.parameters()
-    #print("Params to learn ")
-
-    if feature_extract :
-        params_to_update = []
-        for name,param in model_ft.named_parameters():
-            if param.requires_grad == True :
-                params_to_update.append(param)
-                #print("\t",name)
-    else :
-        for name,param in model_ft.named_parameters() :
-            if param.requires_grad == True :
-                pass
-                #print("\t",name)
-
-    optimizer_ft = optim.SGD(params_to_update,lr=0.001, momentum = .9)
+        #list of lists of the individual parts
+        testIndLists.append(kPartsIndices[i])
 
 
-    #loss
-    criterion = nn.MSELoss()
 
-    #Train and evaluate
-    model_ft, hist = train_model(model_ft, dataloader, dataloaderV, datasetSize, criterion, optimizer_ft, model_name, batch_size, x, nnCompleteFileName, err_file, num_epochs, is_inception = (model_name == "inception"))
+    for x in range(0, 5):
+
+        model_ft , image_size = initialize_model(model_name, num_classes, feature_extract, use_pretrained=True)
+
+        datasetSize = len(trainIndLists[x]) #cannot use dataloader.datasets because it outputs all data, not just sampler ones
+        trainsampler = SubsetRandomSampler(trainIndLists[x])
+
+        dataloader = torch.utils.data.DataLoader(dataset = ID, batch_size = batch_size, sampler=trainsampler, shuffle = False) #when supplying a sampler, shuffle has to be false, SubsetRandomSampler takes care of shuffling at each iteration
+
+
+        #model_ft.load_state_dict(torch.load('./netFL.pt', map_location=lambda storage, loc: storage))
+
+        "in case feature_extract is true, only output layer parameters will have grad as true, so these are the only needed in params_to_update"
+        model_ft = model_ft.to(device)
+        params_to_update = model_ft.parameters()
+        #print("Params to learn ")
+
+        if feature_extract :
+            params_to_update = []
+            for name,param in model_ft.named_parameters():
+                if param.requires_grad == True :
+                    params_to_update.append(param)
+                    #print("\t",name)
+        else :
+            for name,param in model_ft.named_parameters() :
+                if param.requires_grad == True :
+                    pass
+                    #print("\t",name)
+
+        optimizer_ft = optim.SGD(params_to_update,lr=.01, momentum = .9)
+
+
+        #loss
+        criterion = nn.MSELoss()
+
+        #Train and evaluate
+        model_ft, hist = train_model(model_ft, dataloader, datasetSize, criterion, optimizer_ft, model_name, batch_size, x, num_epochs, is_inception = (model_name == "inception"))
 
 def test():
 
@@ -688,7 +672,7 @@ def trainDec():
     image_size = 224
 
     multi_gpu = False
-    resume = False
+    resume = True
     num_classes = 2
     num_epochs = 1000
 
@@ -783,7 +767,7 @@ def trainDec():
     print('batch_size : ',batch_size)
 
     save_name = 'AFEW-VA-'+str(testSplit)+"-"+save_name_ori
-    err_file = curDir+save_name+"AFEW.txt"
+    err_file = curDir+save_name+"AFEWPART2.txt"
 
     set_parameter_requires_grad(model_ft, freezeInternal)
 
@@ -802,7 +786,6 @@ def trainDec():
     if resume :
 
         pretrained_dict = torch.load(curDir+'t-models/'+save_name)
-
         model_dict = model_ft.state_dict()
 
         # 1. filter out unnecessary keys
@@ -851,10 +834,9 @@ def trainDec():
     for epoch in range(num_epochs) :
         print('Epoch {}/{}'.format(epoch, num_epochs - 1))
         print('-'*10)
-
         f = open(err_file,'a')
-        f.write('Epoch {}/{}'.format(epoch, num_epochs - 1))
-        f.close()
+	f.write('Epoch {}/{}'.format(epoch, num_epochs - 1))
+	f.close()
 
         running_loss = 0
         running_corrects = 0
@@ -890,8 +872,8 @@ def trainDec():
         print('Loss : {:.4f}'.format(epoch_loss))
 
         f = open(err_file,'a')
-        f.write('Loss : {:.4f}'.format(epoch_loss))
-        f.close()
+	f.write('Loss : {:.4f}'.format(epoch_loss))
+	f.close()
 
         #Deep copy the model_ft
         if epoch%2 == 0 :#epoch_loss < lowest_loss :
@@ -980,7 +962,7 @@ def trainDec():
                 print('MSEV : ',mseV, ', CORV : ',corV,', ICCV : ',iccV,', ICCV2 : ',iccV2)
                 print('MSEA : ',mseA, ', CORA : ',corA,', ICCA : ',iccA,', ICCA2 : ',iccA2)
 
-                with open('AFEW-VA-RESNET-'+str(testSplit)+'-res.csv',mode='a') as fcsv:
+                with open('AFEW-VA-RESNET-'+str(testSplit)+'-resPART2.csv',mode='a') as fcsv:
                     fcsv.write(str(epoch)+','+str(epoch_loss)+','+str(mseV)+','+str(corV)+','+str(iccV)+','+str(iccV2)+','+str(mseA)+','+str(corA)+','+str(iccA)+','+str(iccA2)+'\n')
 
 
@@ -988,126 +970,3 @@ def trainDec():
 
 
 trainDec()
-
-
-def train():
-
-    print('Starting net training mode', os.getcwd())
-
-    #Model to chosse from [resnet, alexnet, vgg, squeezenet, densenet,inception]
-    model_name = args.model
-    if model_name=='a': model_name='alexnet'
-    elif model_name=='d': model_name='densenet'
-    elif model_name=='i': model_name='inception'
-    elif model_name=='r': model_name='resnet'
-    elif model_name=='s': model_name='squeezenet'
-    elif model_name=='v': model_name='vgg'
-    else: model_name=='invalid'
-
-    #Number of classes
-    num_classes = 2
-
-    #Batch size
-    num_epochs = 1000
-
-    feature_extract = False
-    #Intialize the model for this run
-
-    type224Models = ['alexnet','densenet','resnet','squeezenet','vgg']
-
-    if model_name in type224Models: image_size = 224
-    elif model_name == 'inception': image_size = 299
-
-    # Data augmentation and normalization for training
-    # Just normalization for validation
-
-    "toTensor transforms PIL image numpy array HxWxC [0,255] to tensor CxHxW [0,1] HxWxC: RGB, RGB, ..., RGB    CxHxW: RR...R,GG...G,BB...B "
-
-    data_transforms = {
-        'train': transforms.Compose([
-            transforms.RandomResizedCrop(image_size),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        ]),
-        'val': transforms.Compose([
-            transforms.Resize((image_size,image_size)),
-            #transforms.CenterCrop(image_size),
-            transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        ])
-    }
-
-    batch_size = args.batchsize
-
-    print('pretrained model: ' + model_name + '\tbatch size: ' + str(batch_size) + '\n')
-
-    print('Facial dataset')
-    ID = ImageDatasets(data_list = ['afew-Train'],transform=data_transforms['train'])
-
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-
-    'Cross validation section'
-    datasetLen = len(ID)
-    indices = list(range(datasetLen))
-    k = 5 #for this cross validation, k = 5
-    split = math.floor(datasetLen/k)+1 #+1, otherwise there would be an extra list of just one sample
-    #data is divided in k (roughly) equal parts
-    kPartsIndices = [indices[z:z+split] for z in range(0,len(indices),split)]
-
-    trainIndLists=[]
-    testIndLists=[]
-
-    for i in range(0, len(kPartsIndices)):
-        curTrainIndList=[]
-
-        #list of lists of indexes from the rest of parts
-        rest = kPartsIndices[:i] + kPartsIndices[i+1:]
-
-        [curTrainIndList.extend(rest[x]) for x in range(0,len(rest))] #extend and the loop to get all rest lists elements in one list
-        #list of lists of the rest parts
-        trainIndLists.append(curTrainIndList)
-
-        #list of lists of the individual parts
-        testIndLists.append(kPartsIndices[i])
-
-
-
-    for x in range(0, 5):
-
-        model_ft , image_size = initialize_model(model_name, num_classes, feature_extract, use_pretrained=True)
-
-        datasetSize = len(trainIndLists[x]) #cannot use dataloader.datasets because it outputs all data, not just sampler ones
-        trainsampler = SubsetRandomSampler(trainIndLists[x])
-
-        dataloader = torch.utils.data.DataLoader(dataset = ID, batch_size = batch_size, sampler=trainsampler, shuffle = False) #when supplying a sampler, shuffle has to be false, SubsetRandomSampler takes care of shuffling at each iteration
-
-
-        #model_ft.load_state_dict(torch.load('./netFL.pt', map_location=lambda storage, loc: storage))
-
-        "in case feature_extract is true, only output layer parameters will have grad as true, so these are the only needed in params_to_update"
-        model_ft = model_ft.to(device)
-        params_to_update = model_ft.parameters()
-        #print("Params to learn ")
-
-        if feature_extract :
-            params_to_update = []
-            for name,param in model_ft.named_parameters():
-                if param.requires_grad == True :
-                    params_to_update.append(param)
-                    #print("\t",name)
-        else :
-            for name,param in model_ft.named_parameters() :
-                if param.requires_grad == True :
-                    pass
-                    #print("\t",name)
-
-        optimizer_ft = optim.SGD(params_to_update,lr=.01, momentum = .9)
-
-
-        #loss
-        criterion = nn.MSELoss()
-
-        #Train and evaluate
-        model_ft, hist = train_model(model_ft, dataloader, datasetSize, criterion, optimizer_ft, model_name, batch_size, x, num_epochs, is_inception = (model_name == "inception"))
